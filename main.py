@@ -2,12 +2,19 @@ import asyncio
 import os
 import openai
 from telethon import TelegramClient, events
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 api_id = os.environ.get('TELEGRAM_API_ID')
 api_hash = os.environ.get('TELEGRAM_API_HASH')
 
 # Define key value pair list of chat ids and openai chat objects
 chat_ids = []
+
+# Define blacklist of chat ids we should not respond to
+blacklist = []
 
 # Define function that takes string as input and returns false or true based on if the string is an emoji
 def is_emoji(s):
@@ -32,8 +39,20 @@ async def main():
 
             user = await event.get_sender()
 
+            # if the chat id is in the blacklist, ignore it
+            if event.chat_id in blacklist:
+                print(f"[{event.chat_id}] [ MSG ] [ BL ] {user.first_name} {user.last_name}: {event.message.message}")
+                return
+
             # If message is from a group chat, check if we should reply
             if event.is_group and not replyOnGroupChats:
+                return
+
+            # If the event is from a reply to a message from ChatGPT let's check if it contains shut up
+            if "shut up" in event.message.message.lower():
+                blacklist.append(event.chat_id)
+                print(f"[{event.chat_id}] [ MSG ] {user.first_name} {user.last_name}: {event.message.message}")
+                await event.reply(f"`I'll shut up for now but keep in mind that {me.first_name} {me.last_name} is away, a reply will be sent as soon as he/she is back.`")
                 return
             
             # Let's check if the message is empty, if so we'll ignore it
@@ -59,18 +78,18 @@ async def main():
 
             # Check if the chat id is already in the list
             if not any(chat_id["id"] == user.id for chat_id in chat_ids):
-                chatHistory=[ 
-                    {
-                        "role": "system",
-                        "content": f"You are speaking for {me.first_name} {me.last_name} and you are filling in for me as an AI."
-                    },
-                    {
-                        "role": "system", 
-                        "content": f"A message came in from {user.first_name} {user.last_name}, make sure to tell him/her that you're filling in for me as an AI and that I'm busy at the moment"
-                    },
+                chatHistory=[
                     {
                         "role": "system", 
                         "content": f"Please reply to the message to the best of your abilities but keep it concise and also make sure to reply in the language based on the given message, make sure you're 100% sure it's that otherwise just fall back to English."
+                    },
+                    {
+                        "role": "system",
+                        "content": f"You are speaking for {me.first_name} {me.last_name} and you are filling in for me as an AI. As a first message example you could say something like: \"Hi, Hello {user.first_name} {user.last_name}, I am an AI and I am currently filling in for the {me.first_name}. ....\""
+                    },
+                    {
+                        "role": "system", 
+                        "content": f"Make sure to tell the sender that if they don't want assistance they can reply with \"shut up\" and I will stop replying to them."
                     }
                 ]
             else:
